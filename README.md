@@ -4,14 +4,13 @@ Stateless Solana program for collecting a fixed fee without an extra swap.
 
 Funds (the output of a swap, or a direct deposit) are sent to the fee taker PDA
 (native) or its associated token account (spl / token-2022). In the same
-transaction, `take_native` / `take_token` forwards `fee_amount` to the constant
-`FEE_RECIPIENT` and the rest of the balance to the given `recipient`. If
+transaction, `take_native` / `take_token` forwards `fee_amount` to the given
+fee recipient and the rest of the balance to the given `recipient`. If
 `fee_amount` exceeds the balance, no fee is taken and the whole balance goes to
 `recipient`.
 
-`FEE_RECIPIENT` is a compile-time constant in
-`programs/fee-taker/src/lib.rs`; for tokens the fee is sent to its associated
-token account, which must already exist.
+Both recipients are passed as accounts on every call (for tokens, as token
+accounts of the same mint); the program holds no state.
 
 ## Install Anchor
 
@@ -35,5 +34,9 @@ anchor test
 ## Deploy
 
 ```bash
-anchor deploy --provider.cluster devnet
+DEPLOYER_PK=<base58 private key | path to keypair json> ./scripts/deploy.sh devnet
 ```
+
+The deployer pays for the deployment and is the program's upgrade authority.
+The program id comes from `target/deploy/fee_taker-keypair.json` (gitignored),
+so keep that file somewhere safe: upgrading requires the same keypair.

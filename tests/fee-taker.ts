@@ -33,12 +33,6 @@ describe("FeeTaker", () => {
     program.programId
   )[0];
 
-  // The constant `FEE_RECIPIENT` baked into the program, read from the IDL
-  // (anchor camel-cases constant names)
-  const feeRecipient = new PublicKey(
-    program.idl.constants.find((c) => c.name === "feeRecipient")!.value
-  );
-
   // Fee payer / mint authority for all tests
   const payer = Keypair.generate();
 
@@ -90,6 +84,7 @@ describe("FeeTaker", () => {
    * accounts, and funds the fee taker's account with `amount`
    */
   const setupToken = async (tokenProgram: PublicKey, amount: number) => {
+    const feeOwner = Keypair.generate();
     const recipientOwner = Keypair.generate();
 
     const mint = await createMint(
@@ -129,7 +124,7 @@ describe("FeeTaker", () => {
     };
 
     const feeTakerTokenAccount = await createAta(feeTaker);
-    const feeTokenAccount = await createAta(feeRecipient);
+    const feeTokenAccount = await createAta(feeOwner.publicKey);
     const recipientTokenAccount = await createAta(recipientOwner.publicKey);
 
     if (amount > 0) {
@@ -152,7 +147,6 @@ describe("FeeTaker", () => {
       feeTokenAccount,
       recipientTokenAccount,
       tokenProgram,
-      createAta,
     };
   };
 
@@ -161,7 +155,6 @@ describe("FeeTaker", () => {
     id: number[],
     feeAmount: number,
     overrides: Partial<{
-      feeRecipient: PublicKey;
       feeTokenAccount: PublicKey;
       recipientTokenAccount: PublicKey;
     }> = {}
@@ -172,7 +165,6 @@ describe("FeeTaker", () => {
         feeTaker,
         mint: accounts.mint,
         feeTakerTokenAccount: accounts.feeTakerTokenAccount,
-        feeRecipient: overrides.feeRecipient ?? feeRecipient,
         feeTokenAccount: overrides.feeTokenAccount ?? accounts.feeTokenAccount,
         recipientTokenAccount:
           overrides.recipientTokenAccount ?? accounts.recipientTokenAccount,
@@ -185,14 +177,14 @@ describe("FeeTaker", () => {
   const takeNative = (
     id: number[],
     feeAmount: number,
-    recipient: PublicKey,
-    overrides: Partial<{ feeRecipient: PublicKey }> = {}
+    feeRecipient: PublicKey,
+    recipient: PublicKey
   ) =>
     program.methods
       .takeNative(id, new anchor.BN(feeAmount))
       .accountsPartial({
         feeTaker,
-        feeRecipient: overrides.feeRecipient ?? feeRecipient,
+        feeRecipient,
         recipient,
         systemProgram: SystemProgram.programId,
       })
@@ -300,45 +292,18 @@ describe("FeeTaker", () => {
       );
     });
 
-    it("rejects a fee recipient other than the constant", async () => {
-      const accounts = await setupToken(TOKEN_PROGRAM_ID, 5_000);
-      const other = Keypair.generate().publicKey;
-      const otherAta = await accounts.createAta(other);
-
-      await expectError(
-        takeToken(accounts, requestId(6), 100, {
-          feeRecipient: other,
-          feeTokenAccount: otherAta,
-        }),
-        "ConstraintAddress"
-      );
-
-      expect(
-        await tokenBalance(accounts.feeTakerTokenAccount, TOKEN_PROGRAM_ID)
-      ).eq(5_000);
-    });
-
-    it("rejects a fee token account that is not the fee recipient's ata", async () => {
-      const accounts = await setupToken(TOKEN_PROGRAM_ID, 5_000);
-
-      await expectError(
-        takeToken(accounts, requestId(7), 100, {
-          feeTokenAccount: accounts.recipientTokenAccount,
-        }),
-        "ConstraintTokenOwner"
-      );
-
-      expect(
-        await tokenBalance(accounts.feeTakerTokenAccount, TOKEN_PROGRAM_ID)
-      ).eq(5_000);
-    });
-
-    it("rejects a recipient token account of another mint", async () => {
+    it("rejects fee / recipient token accounts of another mint", async () => {
       const accounts = await setupToken(TOKEN_PROGRAM_ID, 5_000);
       const other = await setupToken(TOKEN_PROGRAM_ID, 0);
 
       await expectError(
-        takeToken(accounts, requestId(8), 100, {
+        takeToken(accounts, requestId(6), 100, {
+          feeTokenAccount: other.feeTokenAccount,
+        }),
+        "ConstraintTokenMint"
+      );
+      await expectError(
+        takeToken(accounts, requestId(6), 100, {
           recipientTokenAccount: other.recipientTokenAccount,
         }),
         "ConstraintTokenMint"
@@ -352,7 +317,7 @@ describe("FeeTaker", () => {
     it("leaves the fee taker token account open and reusable", async () => {
       const accounts = await setupToken(TOKEN_PROGRAM_ID, 2_000);
 
-      await takeToken(accounts, requestId(9), 1_000);
+      await takeToken(accounts, requestId(7), 1_000);
       expect(
         await tokenBalance(accounts.feeTakerTokenAccount, TOKEN_PROGRAM_ID)
       ).eq(0);
@@ -367,7 +332,7 @@ describe("FeeTaker", () => {
         [],
         { commitment: "confirmed" }
       );
-      await takeToken(accounts, requestId(10), 2_000);
+      await takeToken(accounts, requestId(8), 2_000);
 
       expect(await tokenBalance(accounts.feeTokenAccount, TOKEN_PROGRAM_ID)).eq(
         3_000
@@ -380,7 +345,7 @@ describe("FeeTaker", () => {
     it("supports token-2022 mints", async () => {
       const accounts = await setupToken(TOKEN_2022_PROGRAM_ID, 1_000_000);
 
-      await takeToken(accounts, requestId(11), 25_000);
+      await takeToken(accounts, requestId(9), 25_000);
 
       expect(
         await tokenBalance(accounts.feeTokenAccount, TOKEN_2022_PROGRAM_ID)
@@ -398,24 +363,27 @@ describe("FeeTaker", () => {
     const minRent = () => connection.getMinimumBalanceForRentExemption(0);
 
     it("forwards the lamports above the rent-exempt minimum and emits the realized amounts", async () => {
+      const feeRecipient = Keypair.generate().publicKey;
       const recipient = Keypair.generate().publicKey;
       const amount = 1e9;
       const feeAmount = 10_000_000;
-      const feeRecipientBefore = await connection.getBalance(feeRecipient);
 
       // Fund the (empty) fee taker PDA with its rent-exempt minimum plus the amount to forward
       await airdrop(feeTaker, (await minRent()) + amount);
 
-      const signature = await takeNative(requestId(12), feeAmount, recipient);
-
-      expect(await connection.getBalance(feeRecipient)).eq(
-        feeRecipientBefore + feeAmount
+      const signature = await takeNative(
+        requestId(10),
+        feeAmount,
+        feeRecipient,
+        recipient
       );
+
+      expect(await connection.getBalance(feeRecipient)).eq(feeAmount);
       expect(await connection.getBalance(recipient)).eq(990_000_000);
       expect(await connection.getBalance(feeTaker)).eq(await minRent());
 
       const event = await getFeeTakenEvent(signature);
-      expect(event.id).deep.eq(requestId(12));
+      expect(event.id).deep.eq(requestId(10));
       expect(event.mint).eq(null);
       expect(event.amount.toNumber()).eq(amount);
       expect(event.requestedFeeAmount.toNumber()).eq(feeAmount);
@@ -430,32 +398,29 @@ describe("FeeTaker", () => {
       expect(await connection.getBalance(feeTaker)).eq(await minRent());
 
       await expectError(
-        takeNative(requestId(13), 100, Keypair.generate().publicKey),
+        takeNative(
+          requestId(11),
+          100,
+          Keypair.generate().publicKey,
+          Keypair.generate().publicKey
+        ),
         "InsufficientBalance"
       );
     });
 
-    it("rejects a fee recipient other than the constant", async () => {
-      await airdrop(feeTaker, 1e9);
+    it("sends everything to the recipient when the fee exceeds the balance", async () => {
+      const feeRecipient = Keypair.generate().publicKey;
+      const recipient = Keypair.generate().publicKey;
 
-      await expectError(
-        takeNative(requestId(14), 100, Keypair.generate().publicKey, {
-          feeRecipient: Keypair.generate().publicKey,
-        }),
-        "ConstraintAddress"
+      await airdrop(feeTaker, 1e9);
+      const signature = await takeNative(
+        requestId(12),
+        1e9 + 1,
+        feeRecipient,
+        recipient
       );
 
-      expect(await connection.getBalance(feeTaker)).eq((await minRent()) + 1e9);
-    });
-
-    it("sends everything to the recipient when the fee exceeds the balance", async () => {
-      const recipient = Keypair.generate().publicKey;
-      const feeRecipientBefore = await connection.getBalance(feeRecipient);
-
-      // 1 SOL is still in the PDA from the previous test
-      const signature = await takeNative(requestId(15), 1e9 + 1, recipient);
-
-      expect(await connection.getBalance(feeRecipient)).eq(feeRecipientBefore);
+      expect(await connection.getBalance(feeRecipient)).eq(0);
       expect(await connection.getBalance(recipient)).eq(1e9);
       expect(await connection.getBalance(feeTaker)).eq(await minRent());
 
@@ -465,15 +430,13 @@ describe("FeeTaker", () => {
     });
 
     it("sends everything to the fee recipient when the fee equals the balance", async () => {
+      const feeRecipient = Keypair.generate().publicKey;
       const recipient = Keypair.generate().publicKey;
-      const feeRecipientBefore = await connection.getBalance(feeRecipient);
 
       await airdrop(feeTaker, 1e9);
-      await takeNative(requestId(16), 1e9, recipient);
+      await takeNative(requestId(13), 1e9, feeRecipient, recipient);
 
-      expect(await connection.getBalance(feeRecipient)).eq(
-        feeRecipientBefore + 1e9
-      );
+      expect(await connection.getBalance(feeRecipient)).eq(1e9);
       expect(await connection.getBalance(recipient)).eq(0);
       expect(await connection.getBalance(feeTaker)).eq(await minRent());
     });

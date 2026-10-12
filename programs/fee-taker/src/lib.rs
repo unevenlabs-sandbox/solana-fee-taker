@@ -8,15 +8,7 @@ use anchor_spl::{
 // Constants
 //----------------------------------------
 
-#[constant]
 pub const FEE_TAKER_SEED: &[u8] = b"fee_taker";
-
-/// Account that receives the fee (native) or whose associated token account
-/// receives the fee (spl / token-2022).
-///
-/// TODO: replace the placeholder with the real fee recipient before deploying.
-#[constant]
-pub const FEE_RECIPIENT: Pubkey = pubkey!("EFRjgV8tAXgA3ZydF6VzJbubSmZsRvsVjo468i1ixTdE");
 
 //----------------------------------------
 // Program ID
@@ -32,14 +24,15 @@ declare_id!("3mB3kHbyvn45hZ87Lp93wY5oKBrAeqKCgRE1mHj9PYYg");
 ///
 /// Funds (the output of a swap, or a direct deposit) are sent to the fee taker
 /// PDA (native) or its associated token account (spl / token-2022). In the
-/// same transaction, `take_*` sends `fee_amount` of the balance to the
-/// constant `FEE_RECIPIENT` and the rest to `recipient` (typically the relay
-/// forwarder, which forwards it into the depository in the next instruction).
+/// same transaction, `take_*` sends `fee_amount` of the balance to a fee
+/// recipient (the solver, tracked off-chain) and the rest to `recipient`
+/// (typically the relay forwarder, which forwards it into the depository in
+/// the next instruction).
 ///
 /// If `fee_amount` exceeds the balance, no fee is taken and the whole balance
 /// goes to `recipient`.
 ///
-/// The program holds no state and does not restrict `recipient`, so funds must
+/// The program holds no state and does not restrict recipients, so funds must
 /// never be left resting in the fee taker accounts across transactions.
 #[program]
 pub mod fee_taker {
@@ -197,16 +190,11 @@ pub struct TakeToken<'info> {
     )]
     pub fee_taker_token_account: InterfaceAccount<'info, TokenAccount>,
 
-    /// CHECK: Must be the constant `FEE_RECIPIENT`
-    #[account(address = FEE_RECIPIENT)]
-    pub fee_recipient: UncheckedAccount<'info>,
-
-    /// Associated token account of `FEE_RECIPIENT` receiving the fee
+    /// Token account receiving the fee (the solver's, tracked off-chain)
     #[account(
         mut,
-        associated_token::mint = mint,
-        associated_token::authority = fee_recipient,
-        associated_token::token_program = token_program,
+        token::mint = mint,
+        token::token_program = token_program,
     )]
     pub fee_token_account: InterfaceAccount<'info, TokenAccount>,
 
@@ -229,8 +217,8 @@ pub struct TakeNative<'info> {
     #[account(mut, seeds = [FEE_TAKER_SEED], bump)]
     pub fee_taker: UncheckedAccount<'info>,
 
-    /// CHECK: Must be the constant `FEE_RECIPIENT`
-    #[account(mut, address = FEE_RECIPIENT)]
+    /// CHECK: Account receiving the fee (the solver, tracked off-chain)
+    #[account(mut)]
     pub fee_recipient: UncheckedAccount<'info>,
 
     /// CHECK: Account receiving the remainder (typically the relay forwarder PDA)
