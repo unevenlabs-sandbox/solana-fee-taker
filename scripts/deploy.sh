@@ -58,7 +58,10 @@ echo "cluster:    $cluster"
 echo "program id: $program_id"
 echo "deployer:   $deployer"
 
-anchor build
+# Anchor 0.30.1 generates the IDL with the `nightly` toolchain, and its IDL
+# crate (anchor-syn) relies on proc_macro APIs that nightlies after early 2025
+# removed. Pin the IDL build to a nightly that still has them.
+RUSTUP_TOOLCHAIN="${ANCHOR_TOOLCHAIN:-nightly-2025-01-01}" anchor build
 anchor deploy \
     --program-name fee_taker \
     --provider.cluster "$cluster" \

@@ -22,8 +22,14 @@ avm use 0.30.1
 ## Build
 
 ```bash
-anchor build
+rustup toolchain install nightly-2025-01-01
+RUSTUP_TOOLCHAIN=nightly-2025-01-01 anchor build
 ```
+
+Anchor 0.30.1 builds the IDL with the `nightly` toolchain, but its IDL crate
+(`anchor-syn`) uses proc_macro APIs removed from nightlies after early 2025, so
+the IDL step fails on a current nightly with `cannot find type SourceFile`.
+Pinning an older nightly for the build avoids that.
 
 ## Test
 
