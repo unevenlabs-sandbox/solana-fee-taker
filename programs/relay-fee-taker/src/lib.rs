@@ -8,6 +8,8 @@ use anchor_spl::{
 // Constants
 //----------------------------------------
 
+/// PDA seed. Must never change: the PDA and its token accounts are referenced
+/// off-chain and pre-created for hot mints.
 pub const FEE_TAKER_SEED: &[u8] = b"fee_taker";
 
 //----------------------------------------
@@ -15,6 +17,26 @@ pub const FEE_TAKER_SEED: &[u8] = b"fee_taker";
 //----------------------------------------
 
 declare_id!("3mB3kHbyvn45hZ87Lp93wY5oKBrAeqKCgRE1mHj9PYYg");
+
+//----------------------------------------
+// security.txt
+//----------------------------------------
+
+// Embedded in a `.security.txt` section of the deployed binary so explorers
+// can show the program name and a security contact. Excluded from CPI builds
+// (`no-entrypoint`) so dependents don't carry a second copy.
+#[cfg(not(feature = "no-entrypoint"))]
+use solana_security_txt::security_txt;
+
+#[cfg(not(feature = "no-entrypoint"))]
+security_txt! {
+    name: "Relay Fee Taker",
+    project_url: "https://relay.link",
+    contacts: "email:support@relay.link",
+    policy: "https://github.com/unevenlabs-sandbox/solana-fee-taker/blob/main/SECURITY.md",
+    preferred_languages: "en",
+    source_code: "https://github.com/unevenlabs-sandbox/solana-fee-taker"
+}
 
 //----------------------------------------
 // Program Module
@@ -35,7 +57,7 @@ declare_id!("3mB3kHbyvn45hZ87Lp93wY5oKBrAeqKCgRE1mHj9PYYg");
 /// The program holds no state and does not restrict recipients, so funds must
 /// never be left resting in the fee taker accounts across transactions.
 #[program]
-pub mod fee_taker {
+pub mod relay_fee_taker {
     use super::*;
 
     /// Forwards the full balance of the fee taker's token account for `mint`:

@@ -19,13 +19,13 @@ import {
 } from "@solana/web3.js";
 import { expect } from "chai";
 
-import { FeeTaker } from "../target/types/fee_taker";
+import { RelayFeeTaker } from "../target/types/relay_fee_taker";
 
-describe("FeeTaker", () => {
+describe("RelayFeeTaker", () => {
   // Configure the client to use the local cluster
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.FeeTaker as Program<FeeTaker>;
+  const program = anchor.workspace.RelayFeeTaker as Program<RelayFeeTaker>;
   const connection = anchor.getProvider().connection;
 
   const feeTaker = PublicKey.findProgramAddressSync(

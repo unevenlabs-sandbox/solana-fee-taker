@@ -5,16 +5,13 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-fee_taker = "3mB3kHbyvn45hZ87Lp93wY5oKBrAeqKCgRE1mHj9PYYg"
+relay_fee_taker = "3mB3kHbyvn45hZ87Lp93wY5oKBrAeqKCgRE1mHj9PYYg"
 
 [programs.devnet]
-fee_taker = "3mB3kHbyvn45hZ87Lp93wY5oKBrAeqKCgRE1mHj9PYYg"
+relay_fee_taker = "3mB3kHbyvn45hZ87Lp93wY5oKBrAeqKCgRE1mHj9PYYg"
 
 [programs.mainnet]
-fee_taker = "3mB3kHbyvn45hZ87Lp93wY5oKBrAeqKCgRE1mHj9PYYg"
-
-[registry]
-url = "https://api.apr.dev"
+relay_fee_taker = "3mB3kHbyvn45hZ87Lp93wY5oKBrAeqKCgRE1mHj9PYYg"
 
 [provider]
 cluster = "Localnet"

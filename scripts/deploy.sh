@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Builds and deploys (or upgrades) the fee_taker program.
+# Builds the relay_fee_taker program reproducibly (solana-verify + docker) and
+# deploys (or upgrades) it.
 #
 # Usage:
 #   DEPLOYER_PK=<base58 private key | path to keypair json> ./scripts/deploy.sh <cluster>
@@ -9,8 +10,12 @@
 #
 # The deployer pays for the deployment and becomes (or must already be) the
 # program's upgrade authority. The program id comes from
-# target/deploy/fee_taker-keypair.json, so that file must be the one the
+# target/deploy/relay_fee_taker-keypair.json, so that file must be the one the
 # program was originally deployed with when upgrading.
+#
+# The binary is built with `solana-verify build` so the deployed hash matches a
+# docker build of the public repo. Never deploy an `anchor build` artifact: its
+# hash differs and verification (scripts/verify.sh) would fail.
 
 set -euo pipefail
 
@@ -27,10 +32,27 @@ if [[ -z "${DEPLOYER_PK:-}" ]]; then
     exit 1
 fi
 
-if [[ ! -f target/deploy/fee_taker-keypair.json ]]; then
-    echo "error: target/deploy/fee_taker-keypair.json not found (run 'anchor build' once, or restore the keypair the program was deployed with)" >&2
+if [[ ! -f target/deploy/relay_fee_taker-keypair.json ]]; then
+    echo "error: target/deploy/relay_fee_taker-keypair.json not found (restore the keypair the program was deployed with)" >&2
     exit 1
 fi
+
+if ! command -v solana-verify >/dev/null; then
+    echo "error: solana-verify not installed (cargo install solana-verify)" >&2
+    exit 1
+fi
+
+if ! docker info >/dev/null 2>&1; then
+    echo "error: docker is not running (solana-verify builds inside a container)" >&2
+    exit 1
+fi
+
+case "$cluster" in
+    mainnet) url="https://api.mainnet-beta.solana.com" ;;
+    devnet) url="https://api.devnet.solana.com" ;;
+    localnet) url="http://127.0.0.1:8899" ;;
+    *) url="$cluster" ;;
+esac
 
 # Materialize the deployer keypair as a file for the solana cli. Base58 keys
 # are converted to the json byte-array format in a temp file that is removed
@@ -51,18 +73,23 @@ else
     ' > "$wallet"
 fi
 
-program_id="$(solana-keygen pubkey target/deploy/fee_taker-keypair.json)"
+program_id="$(solana-keygen pubkey target/deploy/relay_fee_taker-keypair.json)"
 deployer="$(solana-keygen pubkey "$wallet")"
 
-echo "cluster:    $cluster"
+echo "cluster:    $cluster ($url)"
 echo "program id: $program_id"
 echo "deployer:   $deployer"
 
-# Anchor 0.30.1 generates the IDL with the `nightly` toolchain, and its IDL
-# crate (anchor-syn) relies on proc_macro APIs that nightlies after early 2025
-# removed. Pin the IDL build to a nightly that still has them.
-RUSTUP_TOOLCHAIN="${ANCHOR_TOOLCHAIN:-nightly-2025-01-01}" anchor build
-anchor deploy \
-    --program-name fee_taker \
-    --provider.cluster "$cluster" \
-    --provider.wallet "$wallet"
+solana-verify build --library-name relay_fee_taker
+echo "executable hash: $(solana-verify get-executable-hash target/deploy/relay_fee_taker.so)"
+
+solana program deploy \
+    --url "$url" \
+    --keypair "$wallet" \
+    --program-id target/deploy/relay_fee_taker-keypair.json \
+    --with-compute-unit-price 50000 \
+    --max-sign-attempts 100 \
+    --use-rpc \
+    target/deploy/relay_fee_taker.so
+
+echo "on-chain hash:   $(solana-verify get-program-hash --url "$url" "$program_id")"

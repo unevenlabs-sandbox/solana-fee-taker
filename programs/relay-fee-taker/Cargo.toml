@@ -1,12 +1,12 @@
 [package]
-name = "fee-taker"
+name = "relay-fee-taker"
 version = "0.1.0"
-description = "Forwards a fixed fee to a constant fee recipient and the rest of the balance to a recipient"
+description = "Forwards a fixed fee to a fee recipient and the rest of the balance to a recipient"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "fee_taker"
+name = "relay_fee_taker"
 
 [features]
 no-entrypoint = []
@@ -19,3 +19,4 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 [dependencies]
 anchor-lang = "0.30.1"
 anchor-spl = "0.30.1"
+solana-security-txt = "1.1.1"
